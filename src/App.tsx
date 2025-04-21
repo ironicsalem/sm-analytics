@@ -1,40 +1,97 @@
-import { useEffect, useState } from "react";
-import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
+import { useState, useEffect } from 'react'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { fetchAuthSession } from 'aws-amplify/auth'
+import { Hub } from 'aws-amplify/utils'
 
-const client = generateClient<Schema>();
+// Import components
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+
+// Import pages
+import Home from './pages/Home';
+import Login from './pages/Login';
+// import About from './pages/About';
+// import Contact from './pages/Contact';
 
 function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
+  // State to track if user is scrolled down and authentication
+  const [isScrolled, setIsScrolled] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
+  // Effect to handle scroll events
   useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
-  }, []);
+    const handleScroll = () => {
+      if (window.scrollY > 10) {
+        setIsScrolled(true)
+      } else {
+        setIsScrolled(false)
+      }
+    }
 
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
+    // Add scroll event listener
+    window.addEventListener('scroll', handleScroll)
+
+    // Clean up event listener
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
+  // Check authentication status
+  const checkAuthStatus = async () => {
+    try {
+      const { tokens } = await fetchAuthSession()
+      setIsAuthenticated(!!tokens)
+    } catch (error) {
+      setIsAuthenticated(false)
+      console.error('Authentication check error:', error)
+    }
   }
 
+  // Effect to set up auth listener and check initial auth status
+  useEffect(() => {
+    // Check auth status immediately
+    checkAuthStatus()
+    
+    // Set up Hub listener for auth events
+    const hubListener = Hub.listen('auth', ({ payload }) => {
+      const { event } = payload
+      
+      if (event === 'signInWithRedirect' || event === 'signedIn') {
+        checkAuthStatus()
+      } else if (event === 'signedOut') {
+        setIsAuthenticated(false)
+      } else if (event === 'tokenRefresh' || event === 'tokenRefresh_failure') {
+        checkAuthStatus()
+      }
+    })
+    
+    // Clean up Hub listener
+    return () => {
+      hubListener()
+    }
+  }, [])
+
   return (
-    <main>
-      <h1>My todos</h1>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new todo.
-        <br />
-        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
-          Review next step of this tutorial.
-        </a>
+    <Router>
+      <div className="flex flex-col min-h-screen">
+        {/* Navbar with sticky positioning */}
+        <Navbar isScrolled={isScrolled} isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />
+        
+        {/* Main content */}
+        <main className="flex-grow">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            {/* <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} /> */}
+            <Route path="/Login" element={<Login />} />
+          </Routes>
+        </main>
+        
+        <Footer />
       </div>
-    </main>
-  );
+    </Router>
+  )
 }
 
-export default App;
+export default App
